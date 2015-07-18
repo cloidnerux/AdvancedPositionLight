@@ -1,10 +1,14 @@
+//#include <GCS_MAVLink.h>
+
 
 
 // NeoPixel Ring simple sketch (c) 2013 Shae Erisson
 // released under the GPLv3 license to match the rest of the AdaFruit NeoPixel library
 //#include <FastSerial.h>
 #include <../GCS_MAVLink/include/mavlink/v1.0/mavlink_types.h>        // Mavlink interface
-#include "../GCS_MAVLink/include/mavlink/v1.0/ardupilotmega/mavlink.h"
+//#include <../GCS_MAVLink/include/mavlink/v1.0/ardupilotmega/mavlink.h>
+#include <../GCS_MAVLink/include/mavlink/v1.0/common/mavlink.h>
+//#include <../GCS_MAVLink/include/mavlink/v1.0/common/mavlink_msg_request_data_stream.h>
 
 
 #include <Adafruit_NeoPixel.h>
@@ -49,6 +53,11 @@ static uint8_t      apm_mav_component;
 static uint8_t      base_mode=0;
 static unsigned long        lastMAVBeat = 0;
 
+mavlink_message_t msg; 
+uint8_t buf[50];
+int system_type = MAV_TYPE_QUADROTOR;
+int autopilot_type = MAV_AUTOPILOT_GENERIC;
+
 void setup() {
   // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
   strip_1.begin();
@@ -72,6 +81,16 @@ void setup() {
   strip_2.show();
   strip_3.show();
   strip_4.show();
+
+  uint8_t len;
+  
+  delay(3000);
+  for(int i = 0; i < 3; i++)
+  {
+    len = mavlink_msg_request_data_stream_pack(MAVLINK_COMM_0, 200, &msg, system_type, autopilot_type, MAV_DATA_STREAM_EXTENDED_STATUS, 2, 1);
+    Serial.write(buf, len);
+    delay(500);
+  }
 }
 
 void loop() {
@@ -82,20 +101,17 @@ void loop() {
   static uint8_t connection = 0;
   uint8_t voltageAlarm;
   // For a set of NeoPixels the first NeoPixel is 0, second is 1, all the way up to the count of pixels minus one.
-  mavlink_message_t msg; 
-  uint8_t buf[MAVLINK_MAX_PACKET_LEN];
-  int system_type = MAV_TYPE_QUADROTOR;
-  int autopilot_type = MAV_AUTOPILOT_GENERIC;
+  
   
   // Pack the message
   // mavlink_message_heartbeat_pack(system id, component id, message container, system type, MAV_AUTOPILOT_GENERIC)
-  mavlink_msg_heartbeat_pack(100, 200, &msg, system_type, autopilot_type, 0, 0, 0);
+  //mavlink_msg_heartbeat_pack(100, 200, &msg, system_type, autopilot_type, 0, 0, 0);
 	
   // Copy the message to send buffer 
-  uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
+  //uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
 	
   // Send the message (.write sends as bytes) 
-  Serial.write(buf, len);
+  //Serial.write(buf, len);
   
   comm_receive();
   if(ap_cell_count > 1)
