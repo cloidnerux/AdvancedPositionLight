@@ -43,6 +43,12 @@ uint8_t    ap_cell_count = 0;
 uint8_t updateSys;
 uint8_t updateGps;
 
+static uint8_t      apm_mav_type;
+static uint8_t      apm_mav_system; 
+static uint8_t      apm_mav_component;
+static uint8_t      base_mode=0;
+static unsigned long        lastMAVBeat = 0;
+
 void setup() {
   // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
   strip_1.begin();
@@ -73,8 +79,24 @@ void loop() {
   uint16_t tmp = 0;
   static unsigned long time = millis();
   static uint8_t state = 0;
+  static uint8_t connection = 0;
   uint8_t voltageAlarm;
   // For a set of NeoPixels the first NeoPixel is 0, second is 1, all the way up to the count of pixels minus one.
+  mavlink_message_t msg; 
+  uint8_t buf[MAVLINK_MAX_PACKET_LEN];
+  int system_type = MAV_TYPE_QUADROTOR;
+  int autopilot_type = MAV_AUTOPILOT_GENERIC;
+  
+  // Pack the message
+  // mavlink_message_heartbeat_pack(system id, component id, message container, system type, MAV_AUTOPILOT_GENERIC)
+  mavlink_msg_heartbeat_pack(100, 200, &msg, system_type, autopilot_type, 0, 0, 0);
+	
+  // Copy the message to send buffer 
+  uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
+	
+  // Send the message (.write sends as bytes) 
+  Serial.write(buf, len);
+  
   comm_receive();
   if(ap_cell_count > 1)
   {
@@ -176,6 +198,21 @@ void comm_receive() {
       // Handle message
       digitalWrite(13, HIGH);
       switch(msg.msgid) {
+        case MAVLINK_MSG_ID_HEARTBEAT:
+          {
+              apm_mav_system    = msg.sysid;
+              apm_mav_component = msg.compid;
+              apm_mav_type      = mavlink_msg_heartbeat_get_type(&msg);            
+           //   osd_mode = mavlink_msg_heartbeat_get_custom_mode(&msg);
+             // osd_mode = (uint8_t)mavlink_msg_heartbeat_get_custom_mode(&msg);
+              //Mode (arducoper armed/disarmed)
+             // base_mode = mavlink_msg_heartbeat_get_base_mode(&msg);
+             // if(getBit(base_mode,7)) motor_armed = 1;
+             // else motor_armed = 0;
+  
+              lastMAVBeat = millis();
+          }
+          break;
         case MAVLINK_MSG_ID_SYS_STATUS:
           digitalWrite(13, LOW);
           ap_voltage_battery = mavlink_msg_sys_status_get_voltage_battery(&msg);  // 1 = 1mV
