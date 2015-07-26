@@ -5,7 +5,8 @@
 
 #include <../GCS_MAVLink/include/mavlink/v1.0/mavlink_types.h>        // Mavlink interface
 #include <../GCS_MAVLink/include/mavlink/v1.0/common/mavlink.h>
-
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 #include <Adafruit_NeoPixel.h>
 #ifdef __AVR__
@@ -26,6 +27,29 @@ Adafruit_NeoPixel strip_1 = Adafruit_NeoPixel(NUMPIXELS, 4, NEO_GRB + NEO_KHZ800
 Adafruit_NeoPixel strip_2 = Adafruit_NeoPixel(NUMPIXELS, 5, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip_3 = Adafruit_NeoPixel(NUMPIXELS, 6, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip_4 = Adafruit_NeoPixel(NUMPIXELS, 7, NEO_GRB + NEO_KHZ800);
+
+////////////////////////////////////////////////////////////////////////////////////
+
+#define ONE_WIRE_BUS 2
+#define TEMPERATURE_PRECISION 9
+#define NUMBER_OF_THERMOMETERS 4
+#define CRITICAL_TEMP 85.0f
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
+
+
+DeviceAddress Thermometers[NUMBER_OF_THERMOMETERS];
+
+float Temperatures[NUMBER_OF_THERMOMETERS];
+
+
+bool useTemperature;
+bool useSensor[NUMBER_OF_THERMOMETERS];
+bool cricitcalTemp;
 
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -53,6 +77,7 @@ uint8_t buf[50];
 int system_type = MAV_TYPE_QUADROTOR;
 int autopilot_type = MAV_AUTOPILOT_GENERIC;
 
+
 ////////////////////////////////////////////////////////////////////////////////////
 
 void setup() {
@@ -66,20 +91,70 @@ void setup() {
   digitalWrite(13, LOW);
   updateSys = 0;
   updateGps = 0;
+  cricitcalTemp = false;
+  sensors.begin();
+  useTemperature = sensors.getDeviceCount() > 0;   //Are there any Temperature Sensors available
+
+  if(useTemperature)
+  { 
+    for(int i = 0; i < NUMBER_OF_THERMOMETERS; i++)
+    {
+      if (!sensors.getAddress(Thermometers[i], i))
+      {
+        useSensor[i] = false;
+      }
+      else
+        useSensor[i] = true;
+    }
+  }
 
   //Initialise the LEDs
   for(int i=0;i<NUMPIXELS;i++){
     // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
-    strip_1.setPixelColor(i, strip_1.Color(0,0,0)); // Moderately bright green color.
-    strip_2.setPixelColor(i, strip_2.Color(0,0,0)); // Moderately bright green color.
-    strip_3.setPixelColor(i, strip_3.Color(0,0,0)); // Moderately bright green color.
-    strip_4.setPixelColor(i, strip_4.Color(0,0,0)); // Moderately bright green color.
+    strip_1.setPixelColor(i, strip_1.Color(0,0,0));
+    strip_2.setPixelColor(i, strip_2.Color(0,0,0));
+    strip_3.setPixelColor(i, strip_3.Color(0,0,0));
+    strip_4.setPixelColor(i, strip_4.Color(0,0,0));
   }
   strip_1.show(); // This sends the updated pixel color to the hardware.
   strip_2.show();
   strip_3.show();
   strip_4.show();
 
+  if(!useTemperature)   //No temperature sensors available, blink two times orange
+  {
+    for(int i=0;i<NUMPIXELS;i++) strip_4.setPixelColor(i, strip_4.Color(255,128,64)); // Orange
+    strip_4.show();
+    delay(1000);
+    for(int i=0;i<NUMPIXELS;i++) strip_4.setPixelColor(i, strip_4.Color(0,0,0)); 
+    strip_4.show();
+    delay(1000);
+    for(int i=0;i<NUMPIXELS;i++) strip_4.setPixelColor(i, strip_4.Color(255,128,64)); // Orange
+    strip_4.show();
+    delay(1000);
+    for(int i=0;i<NUMPIXELS;i++) strip_4.setPixelColor(i, strip_4.Color(0,0,0)); 
+    strip_4.show();
+  }
+  else
+  {
+     for(int i=0;i<NUMPIXELS && i < NUMBER_OF_THERMOMETERS;i++)
+     {  
+        if(useSensor[i])
+        {
+          strip_4.setPixelColor(i, strip_4.Color(0,255,0)); 
+          sensors.setResolution(Thermometers[i], TEMPERATURE_PRECISION);
+          Temperatures[i] = sensors.getTempC(Thermometers[i]);
+        }
+        else
+          strip_4.setPixelColor(i, strip_4.Color(255,0,0)); 
+        
+     }
+     strip_4.show();
+     delay(2000);
+     for(int i=0;i<NUMPIXELS;i++) strip_4.setPixelColor(i, strip_4.Color(0,0,0)); 
+     strip_4.show();
+  }
+  
   //Wait a moment for the APM/Pixhawk to boot
   delay(3000);
 }
@@ -105,15 +180,28 @@ void loop() {
   }
 
   //Switch every second
-  if((millis() - time) > 1000)  //tick
+  if((millis() - time) > 1000 || (cricitcalTemp && (millis() - time) > 500))  //tick
   {
     time = millis();
     state ^= 1;
+    if(useTemperature)
+    {
+      for(int i=0;i < NUMBER_OF_THERMOMETERS;i++)  //Update temperature data
+      {  
+         cricitcalTemp = false;
+         if(useSensor[i])
+         {
+           Temperatures[i] = sensors.getTempC(Thermometers[i]);
+           if(Temperatures[i] > CRITICAL_TEMP)
+            cricitcalTemp = true;
+         }
+      }
+    }
     if(state == 0)
     {
       for(int i=0;i<NUMPIXELS;i++){
-        strip_3.setPixelColor(i, strip_3.Color(0,0,0)); // Moderately bright green color.
-        strip_4.setPixelColor(i, strip_4.Color(0,0,0)); // Moderately bright green color.
+        strip_3.setPixelColor(i, strip_3.Color(0,0,0));
+        strip_4.setPixelColor(i, strip_4.Color(0,0,0));
         if(voltageAlarm)
           strip_2.setPixelColor(i, 0, 0, 0);
         }
@@ -121,8 +209,13 @@ void loop() {
     if(state == 1)
     {
       for(int i=0;i<NUMPIXELS;i++){
-        strip_3.setPixelColor(i, strip_3.Color(0,0,255)); // Moderately bright green color.
-        strip_4.setPixelColor(i, strip_4.Color(255,0,0)); // Moderately bright green color.
+        if(cricitcalTemp)
+        {
+          strip_3.setPixelColor(i, strip_3.Color(255,0,0));
+        }
+        else
+          strip_3.setPixelColor(i, strip_3.Color(0,0,255));
+        strip_4.setPixelColor(i, strip_4.Color(255,255.,0));
         if(voltageAlarm)
           strip_2.setPixelColor(i, 255, 0, 0);
       }
